@@ -18,7 +18,9 @@
 // Moving Averages  everget https://www.tradingview.com/u/everget/
 // "Many Moving Averages" script  Fractured https://www.tradingview.com/u/Fractured/
 //study("SSL Hybrid", overlay=true, max_bars_back = 4000)
-strategy("SSL Hybrid", overlay=true, max_bars_back = 4000, process_orders_on_close= true)
+strategy("SSL Hybrid", overlay=true, max_bars_back = 4000, process_orders_on_close= true, pyramiding=100,
+     default_qty_type = strategy.percent_of_equity, default_qty_value=3000,
+     margin_long=1./30*50, margin_short=1./30*50)
 show_Baseline = input(title="Show Baseline", type=input.bool, defval=true)
 show_SSL1 = input(title="Show SSL1", type=input.bool, defval=false)
 show_atr = input(title="Show ATR bands", type=input.bool, defval=true)
@@ -804,8 +806,8 @@ shortCondition = shortcond_1 and shortcond_2 and shortcond_3 and shortcond_4 and
 entry_exit_arrow = longCondition ? 2 : shortCondition ? -2 : na 
 plotarrow(entry_exit_arrow, colorup=color.green, colordown=color.purple,title="Strategy entry arrows", transp=0, maxheight=20, offset=0)
 
-strategy.entry("LONG", strategy.long, when=longCondition)
-strategy.entry("SHORT", strategy.short, when=shortCondition)
+strategy.entry("LONG", strategy.long, when=(longCondition and (strategy.position_size == 0)))
+strategy.entry("SHORT", strategy.short, when=(shortCondition and (strategy.position_size ==0)))
 
 //
 // The Fixed Percent Stop Loss Code
@@ -813,12 +815,38 @@ strategy.entry("SHORT", strategy.short, when=shortCondition)
 stopPer = input(0.5, title='Stop Loss %', type=input.float) / 100
 takePer = input(1.0, title='Take Profit %', type=input.float) / 100
 
-// Determine where you've entered and in what direction
-longStop = strategy.position_avg_price * (1 - stopPer)
-shortStop = strategy.position_avg_price * (1 + stopPer)
-shortTake = strategy.position_avg_price * (1 - takePer)
-longTake = strategy.position_avg_price * (1 + takePer)
+var longStop = open  //just init with something.  only happens on first bar.
+var shortStop = open
+var longTake = open
+var shortTake= open
+var targetNum = 0
 
+
+if(longCondition)  //when we have a new open, init some vars.
+    // Set the stop loss below the green candle. 
+    targetNum := 1
+    longStop := open[5]  //initial stop Per Jordan:  "Look five bars back and set the SL to the lower wick"
+    longTake := strategy.position_avg_price * (1 + takePer)  //initial target.
+
+if(shortCondition)
+    targetNum := 1
+    shortStop := open[5] //initial stop Per Jordan:  "Look five bars back and set the SL to the lower wick"
+    shortTake := strategy.position_avg_price * (1 - takePer)
+    
+
+if(close >= longTake)  //if the current candle > current target, move the target.
+    targetNum := targetNum +1 //increase the target number.
+    longStop := longTake    //move the stop up to the previous target. 
+    longTake := (strategy.position_avg_price * (1 + (takePer * targetNum)))   //shift the target up to the new level.
+    
+
+if(close <= shortTake)  //if the current candle < current target, move the target.
+    targetNum := targetNum +1 //increase the target number.
+    shortStop := shortTake    //move the stop up to the previous target. 
+    shortTake := (strategy.position_avg_price * (1 - (takePer * targetNum)))   //shift the target up to the new level.
+
+
+//update exit strategy on every bar.
 if strategy.position_size > 0 
     strategy.exit(id="Close Long", stop=longStop, limit=longTake)
 if strategy.position_size < 0 
